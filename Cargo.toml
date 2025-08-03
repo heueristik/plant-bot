@@ -1,0 +1,13 @@
+[package]
+name = "plant-bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15.0"
+fritzapi = "0.4.1"
+open-meteo-api = "0.1.4"
+uom = { version = "0.35.0", features = ["f32"] }
+chrono = "0.4.41"
+tokio-cron-scheduler = "0.9"
