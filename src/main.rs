@@ -1,7 +1,9 @@
 use crate::socket::to_dect210;
 use crate::weather::calculate_cycles_needed_blocked;
-use chrono::Local;
+use core::time::Duration;
 use std::thread;
+use uom::si::f32::Time;
+use uom::si::time::{minute, second};
 
 mod duration;
 mod location;
@@ -16,22 +18,40 @@ fn main() {
     let mut devices = client.list_devices().unwrap();
     let dev = devices.first_mut().unwrap();
 
-    println!("Temperature {}°C", to_dect210(dev).celsius);
+    println!("Current temperature {}°C", to_dect210(dev).celsius);
 
     thread::sleep(core::time::Duration::from_secs(2));
-    let n = calculate_cycles_needed_blocked();
+    let n_cycles = calculate_cycles_needed_blocked(location::BERLIN);
+
+    println!("{n_cycles} cycles needed");
+
+    for i in 1..=n_cycles {
+        println!("Started watering Cycle {i}...");
 
 
-    for i in 1..=n {
-        println!("Started watering Cycle {i} at {}...", Local::now().format("%Y-%m-%d %H:%M:%S"));
-
+        println!("Turned electricity ON...");
         dev.turn_on(&mut client).expect("Failed to turn on ");
-        thread::sleep(duration::seconds(65));
 
+
+        let pump_interval = Time::new::<second>(1.0);
+        println!("Pumping for {} seconds...", pump_interval.get::<second>());
+        thread::sleep(Duration::from_secs(pump_interval.value as u64));
+
+
+        let wait_interval = Time::new::<second>(2.0);
+        println!("Pumping completed! Waiting for {} seconds...", wait_interval.get::<second>());
+        thread::sleep(Duration::from_secs(wait_interval.get::<second>() as u64));
+
+        println!("Turned electricity OFF...");
         dev.turn_off(&mut client).expect("Failed to turn off ");
-        thread::sleep(duration::minutes(30));
 
-        println!("Ended watering Cycle {i} at {}...", Local::now().format("%Y-%m-%d %H:%M:%S"));
+        if i < n_cycles {
+            let sleep_interval = Time::new::<minute>(30.0);
+            println!("Waiting for {} minutes...", sleep_interval.get::<minute>());
+            thread::sleep(Duration::from_secs((sleep_interval - wait_interval).get::<second>() as u64));
+        }
+
+        println!("Ended watering Cycle {i} at...");
     }
 }
 

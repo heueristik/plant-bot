@@ -1,4 +1,3 @@
-use crate::location;
 use crate::location::Location;
 use chrono::{DateTime, Timelike, Utc};
 use open_meteo_api::models::OpenMeteoData;
@@ -50,14 +49,13 @@ pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
         let volume_per_cycle = Volume::new::<liter>(0.12);
         let cycles = (volume / volume_per_cycle).value.ceil() as usize;
 
-        println!("Watering cycles needed: {cycles}");
         cycles
     }
 }
 
-pub fn calculate_cycles_needed_blocked() -> usize {
+pub fn calculate_cycles_needed_blocked(location: Location) -> usize {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let data = query_weather_data(location::BERLIN).await;
+        let data = query_weather_data(location).await;
         calculate_cycles_needed(&data).await
     })
 }
@@ -71,7 +69,7 @@ fn precipitation_evaporation_delta(data: &OpenMeteoData) -> f32 {
 
     let delta = precipitation - evapotranspiration;
     println!(
-        "Δ = Precipitation - Evapotranspiration: {precipitation}mm - {evapotranspiration}mm = {delta}mm"
+        "   Δ = Precipitation - Evapotranspiration: {precipitation}mm - {evapotranspiration}mm = {delta}mm"
     );
 
     delta
@@ -118,7 +116,9 @@ fn utc_offset_string(utc_offset_seconds: f32) -> String {
 
 #[tokio::test]
 async fn test_find_current_hour_index() {
-    let data = query_weather_data(location::BERLIN).await;
+    use crate::location::BERLIN;
+
+    let data = query_weather_data(BERLIN).await;
 
     let index = find_current_hourly_index(&data).unwrap();
     let found_time_parsing = DateTime::parse_from_rfc3339(&adjusted_date_with_offset(
