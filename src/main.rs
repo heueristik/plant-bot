@@ -53,6 +53,7 @@ fn main() {
 
         println!("Ended watering Cycle {i} at...");
     }
+    println!("Stopping...");
 }
 
 
