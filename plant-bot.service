@@ -1,0 +1,17 @@
+[Unit]
+Description=Plant-Bot
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=plant-bot
+Restart=no
+
+Environment="FRITZ_USERNAME=<username>"
+Environment="FRITZ_PASSWORD=<password>"
+
+ExecStart=/home/plant-bot/plant-bot/target/release/plant-bot
+
+[Install]
+WantedBy=default.target
