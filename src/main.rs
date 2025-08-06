@@ -33,7 +33,7 @@ fn main() {
         dev.turn_on(&mut client).expect("Failed to turn on ");
 
 
-        let pump_interval = Time::new::<second>(1.0);
+        let pump_interval = Time::new::<second>(60.0);
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
         thread::sleep(Duration::from_secs(pump_interval.value as u64));
 
@@ -46,7 +46,7 @@ fn main() {
         dev.turn_off(&mut client).expect("Failed to turn off ");
 
         if i < n_cycles {
-            let sleep_interval = Time::new::<minute>(30.0);
+            let sleep_interval = Time::new::<minute>(29.0);
             println!("Waiting for {} minutes...", sleep_interval.get::<minute>());
             thread::sleep(Duration::from_secs((sleep_interval - wait_interval).get::<second>() as u64));
         }
