@@ -32,23 +32,22 @@ fn main() {
         println!("Turned electricity ON...");
         dev.turn_on(&mut client).expect("Failed to turn on ");
 
-
         let pump_interval = Time::new::<second>(60.0);
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
         thread::sleep(Duration::from_secs(pump_interval.value as u64));
 
 
-        let wait_interval = Time::new::<second>(2.0);
-        println!("Pumping completed! Waiting for {} seconds...", wait_interval.get::<second>());
-        thread::sleep(Duration::from_secs(wait_interval.get::<second>() as u64));
+        let shutdown_interval = Time::new::<second>(2.0);
+        println!("Pumping completed! Waiting for {} seconds to shut the pump off...", shutdown_interval.get::<second>());
+        thread::sleep(Duration::from_secs(shutdown_interval.get::<second>() as u64));
 
         println!("Turned electricity OFF...");
         dev.turn_off(&mut client).expect("Failed to turn off ");
 
         if i < n_cycles {
-            let sleep_interval = Time::new::<minute>(29.0);
-            println!("Waiting for {} minutes...", sleep_interval.get::<minute>());
-            thread::sleep(Duration::from_secs((sleep_interval - wait_interval).get::<second>() as u64));
+            let sleep_interval = Time::new::<minute>(30.0) - (pump_interval + shutdown_interval);
+            println!("Waiting for the next cycle in {}...", sleep_interval.get::<minute>());
+            thread::sleep(Duration::from_secs(sleep_interval.get::<second>() as u64));
         }
 
         println!("Ended watering Cycle {i} at...");
