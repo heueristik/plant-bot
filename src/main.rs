@@ -12,13 +12,12 @@ mod weather;
 
 
 fn main() {
-    println!("Starting...");
-
+    println!("Querying weather...");
     let mut client = socket::get_client();
     let mut devices = client.list_devices().unwrap();
     let dev = devices.first_mut().unwrap();
 
-    println!("Current temperature {}°C", to_dect210(dev).celsius);
+    println!("   Temperature (Current): {} °C", to_dect210(dev).celsius);
 
     thread::sleep(core::time::Duration::from_secs(2));
     let n_cycles = calculate_cycles_needed_blocked(location::BERLIN);
@@ -26,8 +25,7 @@ fn main() {
     println!("{n_cycles} cycles needed");
 
     for i in 1..=n_cycles {
-        println!("Started watering Cycle {i}...");
-
+        println!("Started watering cycle {i}...");
 
         println!("Turned electricity ON...");
         dev.turn_on(&mut client).expect("Failed to turn on ");
@@ -50,9 +48,8 @@ fn main() {
             thread::sleep(Duration::from_secs(sleep_interval.get::<second>() as u64));
         }
 
-        println!("Ended watering Cycle {i} at...");
+        println!("Ended watering cycle {i}...");
     }
-    println!("Stopping...");
 }
 
 

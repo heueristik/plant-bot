@@ -6,6 +6,7 @@ use uom::si::area::square_meter;
 use uom::si::f32::{Area, Length, Volume};
 use uom::si::length::millimeter;
 use uom::si::volume::liter;
+use uom::ConversionFactor;
 
 pub async fn query_weather_data(location: Location) -> OpenMeteoData {
     OpenMeteo::new()
@@ -29,27 +30,27 @@ pub async fn query_weather_data(location: Location) -> OpenMeteoData {
 }
 
 pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
-    let area = Area::new::<square_meter>(0.1); // Example: Big planter
+    let area = Area::new::<square_meter>(0.5);
     let delta = Length::new::<millimeter>(precipitation_evaporation_delta(data));
-    let volume = (delta * area).abs();
+    let volume = delta * area;
 
-    println!(
-        "{} volume (24h): {:.2} L",
-        if delta.value > 0.0 {
-            "Surplus"
-        } else {
-            "Deficient"
-        },
-        volume.get::<liter>()
+    println!("                   Area : {:.2} m2", area.get::<square_meter>().value());
+
+    println!("{} volume: {:.2} L\n",
+             if delta.value > 0.0 {
+                 "          Surplus"
+             } else {
+                 "        Deficient"
+             },
+             volume.get::<liter>().value().abs()
     );
 
     if delta.value > 0.0 {
         0 // No cycles needed
     } else {
-        let volume_per_cycle = Volume::new::<liter>(0.12);
-        let cycles = (volume / volume_per_cycle).value.ceil() as usize;
+        let volume_per_cycle = Volume::new::<liter>(0.6);
 
-        cycles
+        (volume.abs() / volume_per_cycle).value as usize
     }
 }
 
@@ -67,12 +68,10 @@ fn precipitation_evaporation_delta(data: &OpenMeteoData) -> f32 {
     let precipitation = calculate_metric(&hourly_data.precipitation, index, -24);
     let evapotranspiration = calculate_metric(&hourly_data.et0_fao_evapotranspiration, index, -24);
 
-    let delta = precipitation - evapotranspiration;
-    println!(
-        "   Δ = Precipitation - Evapotranspiration: {precipitation}mm - {evapotranspiration}mm = {delta}mm"
-    );
+    println!("     Precipitation (24h): {precipitation:.2} mm", );
+    println!("Evapotranspiration (24h): {evapotranspiration:.2} mm", );
 
-    delta
+    precipitation - evapotranspiration
 }
 
 fn calculate_metric(data: &[Option<f32>], index: usize, range_hours: isize) -> f32 {
