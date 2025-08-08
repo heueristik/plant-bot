@@ -45,13 +45,15 @@ pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
              volume.get::<liter>().value().abs()
     );
 
-    if delta.value > 0.0 {
+    let n_cycles = if delta.value > 0.0 {
         0 // No cycles needed
     } else {
         let volume_per_cycle = Volume::new::<liter>(0.5);
 
         (volume.abs() / volume_per_cycle).value.ceil() as usize
-    }
+    };
+
+    if n_cycles > 10 { 10 } else { n_cycles }
 }
 
 pub fn calculate_cycles_needed_blocked(location: Location) -> usize {
