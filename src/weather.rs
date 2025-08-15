@@ -30,7 +30,7 @@ pub async fn query_weather_data(location: Location) -> OpenMeteoData {
 }
 
 pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
-    let area = Area::new::<square_meter>(0.5);
+    let area = Area::new::<square_meter>(0.6);
     let delta = Length::new::<millimeter>(precipitation_evaporation_delta(data));
     let volume = delta * area;
 
