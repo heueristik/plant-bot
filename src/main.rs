@@ -3,13 +3,12 @@ use crate::weather::calculate_cycles_needed_blocked;
 use core::time::Duration;
 use std::thread;
 use uom::si::f32::Time;
-use uom::si::time::{minute, second};
+use uom::si::time::{hour, minute, second};
 
 mod duration;
 mod location;
 mod socket;
 mod weather;
-
 
 fn main() {
     println!("Querying weather...");
@@ -34,9 +33,11 @@ fn main() {
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
         thread::sleep(Duration::from_secs(pump_interval.value as u64));
 
-
         let shutdown_interval = Time::new::<second>(2.0);
-        println!("Pumping completed! Waiting for {} seconds to shut the pump off...", shutdown_interval.get::<second>());
+        println!(
+            "Pumping completed! Waiting for {} seconds to shut the pump off...",
+            shutdown_interval.get::<second>()
+        );
         thread::sleep(Duration::from_secs(shutdown_interval.get::<second>() as u64));
 
         println!("Turned electricity OFF...");
@@ -44,12 +45,13 @@ fn main() {
 
         if i < n_cycles {
             let sleep_interval = Time::new::<minute>(60.0) - (pump_interval + shutdown_interval);
-            println!("Waiting for the next cycle in {}...", sleep_interval.get::<minute>());
+            println!(
+                "Waiting for the next cycle in {}...",
+                sleep_interval.get::<hour>().round()
+            );
             thread::sleep(Duration::from_secs(sleep_interval.get::<second>() as u64));
         }
 
         println!("Ended watering cycle {i}...");
     }
 }
-
-

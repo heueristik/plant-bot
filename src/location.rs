@@ -12,7 +12,6 @@ pub const BERLIN: Location = Location {
     time_zone: TimeZone::EuropeBerlin,
 };
 
-
 #[allow(dead_code)]
 pub const ROME: Location = Location {
     latitude: 41.88,

@@ -1,7 +1,6 @@
 use fritzapi::{AVMDevice, FritzClient, FritzDect2XX};
 use std::env;
 
-
 pub fn get_client() -> FritzClient {
     dotenv::dotenv().ok();
 
@@ -21,10 +20,10 @@ pub fn get_client() -> FritzClient {
 pub fn to_dect210(dev: &mut AVMDevice) -> &mut FritzDect2XX {
     match dev {
         AVMDevice::FritzDect2XX(dect210) => Some(dect210),
-        AVMDevice::Other(_) => None
-    }.unwrap()
+        AVMDevice::Other(_) => None,
+    }
+    .unwrap()
 }
-
 
 #[test]
 fn test_device() {
@@ -32,7 +31,6 @@ fn test_device() {
     let mut client = get_client();
 
     let mut devices = client.list_devices().unwrap();
-
 
     let dev = devices.first_mut().unwrap();
 
