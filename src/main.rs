@@ -46,7 +46,7 @@ fn main() {
         if i < n_cycles {
             let sleep_interval = Time::new::<minute>(60.0) - (pump_interval + shutdown_interval);
             println!(
-                "Waiting for the next cycle in {}...",
+                "Waiting for the next cycle in {} hour(s)...",
                 sleep_interval.get::<hour>().round()
             );
             thread::sleep(Duration::from_secs(sleep_interval.get::<second>() as u64));
