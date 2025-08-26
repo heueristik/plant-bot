@@ -2,11 +2,11 @@ use crate::location::Location;
 use chrono::{DateTime, Timelike, Utc};
 use open_meteo_api::models::OpenMeteoData;
 use open_meteo_api::query::OpenMeteo;
-use uom::ConversionFactor;
 use uom::si::area::square_meter;
 use uom::si::f32::{Area, Length, Volume};
 use uom::si::length::millimeter;
 use uom::si::volume::liter;
+use uom::ConversionFactor;
 
 pub async fn query_weather_data(location: Location) -> OpenMeteoData {
     OpenMeteo::new()
@@ -30,7 +30,7 @@ pub async fn query_weather_data(location: Location) -> OpenMeteoData {
 }
 
 pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
-    let area = Area::new::<square_meter>(0.6);
+    let area = Area::new::<square_meter>(0.75);
     let delta = Length::new::<millimeter>(precipitation_evaporation_delta(data));
     let volume = delta * area;
 
@@ -74,8 +74,8 @@ fn precipitation_evaporation_delta(data: &OpenMeteoData) -> f32 {
     let precipitation = calculate_metric(&hourly_data.precipitation, index, -24);
     let evapotranspiration = calculate_metric(&hourly_data.et0_fao_evapotranspiration, index, -24);
 
-    println!("     Precipitation (24h): {precipitation:.2} mm",);
-    println!("Evapotranspiration (24h): {evapotranspiration:.2} mm",);
+    println!("     Precipitation (24h): {precipitation:.2} mm", );
+    println!("Evapotranspiration (24h): {evapotranspiration:.2} mm", );
 
     precipitation - evapotranspiration
 }
@@ -104,7 +104,7 @@ fn find_current_hourly_index(data: &OpenMeteoData) -> Option<usize> {
             timestamp,
             data.utc_offset_seconds,
         ))
-        .is_ok_and(|parsed| parsed == current_time)
+            .is_ok_and(|parsed| parsed == current_time)
     })
 }
 
@@ -130,7 +130,7 @@ async fn test_find_current_hour_index() {
         &data.hourly.as_ref().unwrap().time[index],
         data.utc_offset_seconds,
     ))
-    .unwrap();
+        .unwrap();
 
     let current_time = Utc::now()
         .with_minute(0)
