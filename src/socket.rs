@@ -41,7 +41,7 @@ pub struct FritzClient {
 impl FritzClient {
     /// Reads the `FRITZ_*` variables from `.env` and logs in.
     pub fn login() -> Result<Self> {
-        dotenv::dotenv().ok();
+        dotenvy::dotenv().ok();
 
         let host = env::var("FRITZ_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string());
         let user = env::var("FRITZ_USERNAME").map_err(|_| "FRITZ_USERNAME not found in .env")?;
