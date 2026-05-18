@@ -10,16 +10,16 @@ mod location;
 mod socket;
 mod weather;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Querying weather...");
     let mut client = socket::get_client();
-    let mut devices = client.list_devices().unwrap();
-    let dev = devices.first_mut().unwrap();
+    let mut devices = client.list_devices()?;
+    let dev = devices.first_mut().expect("No devices found");
 
     println!("   Temperature (Current): {} °C", to_dect210(dev).celsius);
 
     thread::sleep(core::time::Duration::from_secs(2));
-    let n_cycles = calculate_cycles_needed_blocked(location::BERLIN);
+    let n_cycles = calculate_cycles_needed_blocked(location::BERLIN)?;
 
     println!("{n_cycles} cycles needed");
 
@@ -54,4 +54,6 @@ fn main() {
 
         println!("Ended watering cycle {i}...");
     }
+
+    Ok(())
 }

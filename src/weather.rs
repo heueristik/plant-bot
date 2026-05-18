@@ -8,25 +8,19 @@ use uom::si::length::millimeter;
 use uom::si::volume::liter;
 use uom::ConversionFactor;
 
-pub async fn query_weather_data(location: Location) -> OpenMeteoData {
+pub async fn query_weather_data(
+    location: Location,
+) -> Result<OpenMeteoData, Box<dyn std::error::Error>> {
     OpenMeteo::new()
-        .coordinates(location.latitude, location.longitude)
-        .unwrap()
-        .forecast_days(2)
-        .unwrap()
-        .current_weather()
-        .unwrap()
-        .past_days(2)
-        .unwrap()
-        .time_zone(location.time_zone)
-        .unwrap()
-        .hourly()
-        .unwrap()
-        .daily()
-        .unwrap()
+        .coordinates(location.latitude, location.longitude)?
+        .forecast_days(2)?
+        .current_weather()?
+        .past_days(2)?
+        .time_zone(location.time_zone)?
+        .hourly()?
+        .daily()?
         .query()
         .await
-        .unwrap()
 }
 
 pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
@@ -62,16 +56,19 @@ pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
     if n_cycles > 10 { 10 } else { n_cycles }
 }
 
-pub fn calculate_cycles_needed_blocked(location: Location) -> usize {
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let data = query_weather_data(location).await;
-        calculate_cycles_needed(&data).await
+pub fn calculate_cycles_needed_blocked(
+    location: Location,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    rt.block_on(async {
+        let data = query_weather_data(location).await?;
+        Ok(calculate_cycles_needed(&data).await)
     })
 }
 
 fn precipitation_evaporation_delta(data: &OpenMeteoData) -> f32 {
     let index = find_current_hourly_index(data).expect("Current hourly index not found");
-    let hourly_data = data.hourly.as_ref().unwrap();
+    let hourly_data = data.hourly.as_ref().expect("Missing hourly weather data");
 
     let precipitation = calculate_metric(&hourly_data.precipitation, index, -24);
     let evapotranspiration = calculate_metric(&hourly_data.et0_fao_evapotranspiration, index, -24);

@@ -4,15 +4,8 @@ use std::env;
 pub fn get_client() -> FritzClient {
     dotenv::dotenv().ok();
 
-    let username: String = env::var("FRITZ_USERNAME")
-        .expect("FRITZ_USERNAME not found in .env")
-        .parse()
-        .unwrap();
-
-    let password: String = env::var("FRITZ_PASSWORD")
-        .expect("FRITZ_PASSWORD not found in .env")
-        .parse()
-        .unwrap();
+    let username = env::var("FRITZ_USERNAME").expect("FRITZ_USERNAME not found in .env");
+    let password = env::var("FRITZ_PASSWORD").expect("FRITZ_PASSWORD not found in .env");
 
     FritzClient::new(username, password)
 }
@@ -22,7 +15,7 @@ pub fn to_dect210(dev: &mut AVMDevice) -> &mut FritzDect2XX {
         AVMDevice::FritzDect2XX(dect210) => Some(dect210),
         AVMDevice::Other(_) => None,
     }
-    .unwrap()
+    .expect("Expected FritzDect2XX device")
 }
 
 #[test]
