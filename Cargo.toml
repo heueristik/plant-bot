@@ -13,5 +13,6 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 reqwest = { version = "0.12", features = ["blocking"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 uom = { version = "0.35.0", features = ["f32"] }

@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Started watering cycle {i}...");
 
         println!("Turned electricity ON...");
-        client.turn_on(&ain).expect("Failed to turn on");
+        client.turn_on(&ain)?;
 
         let pump_interval = Time::new::<second>(60.0);
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
@@ -45,8 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         thread::sleep(Duration::from_secs(shutdown_interval.get::<second>() as u64));
 
+        if let Err(err) = client.turn_off(&ain) {
+            eprintln!("!!! CRITICAL: failed to switch the pump OFF: {err}");
+            eprintln!("!!! The pump may still be running — switch it off manually now.");
+            return Err(err.into());
+        }
         println!("Turned electricity OFF...");
-        client.turn_off(&ain).expect("Failed to turn off");
 
         if i < n_cycles {
             let sleep_interval = Time::new::<minute>(60.0) - (pump_interval + shutdown_interval);

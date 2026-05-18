@@ -7,14 +7,65 @@
 use serde::Deserialize;
 use sha2::Sha256;
 use std::env;
+use std::thread;
+use std::time::Duration;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+/// Result type for all FRITZ!Box operations.
+pub type Result<T> = std::result::Result<T, FritzError>;
 
 /// Default address of a FRITZ!Box on its own LAN (overridable via `FRITZ_HOST`).
 const DEFAULT_HOST: &str = "http://192.168.178.1";
 
 /// Session id returned while not authenticated.
 const DEFAULT_SID: &str = "0000000000000000";
+
+/// How many times a transient request failure is attempted before giving up.
+const RETRY_ATTEMPTS: usize = 3;
+
+/// Delay between retries of a transient request failure.
+const RETRY_DELAY: Duration = Duration::from_secs(3);
+
+/// An error talking to the FRITZ!Box.
+#[derive(thiserror::Error, Debug)]
+pub enum FritzError {
+    /// Missing or invalid configuration — not fixable by retrying.
+    #[error("{0}")]
+    Config(String),
+
+    /// Network-level failure reaching the FRITZ!Box — worth retrying.
+    #[error("cannot reach the FRITZ!Box: {0}")]
+    Transport(#[from] reqwest::Error),
+
+    /// The FRITZ!Box answered with an unexpected HTTP status.
+    #[error("FRITZ!Box returned HTTP {status} for '{cmd}'")]
+    Http {
+        cmd: String,
+        status: reqwest::StatusCode,
+    },
+
+    /// The login was rejected — bad credentials, throttling, or a missing
+    /// 'Smart Home' permission. Retrying will not help.
+    #[error("{0}")]
+    Login(String),
+
+    /// The FRITZ!Box response could not be parsed.
+    #[error("unexpected response from the FRITZ!Box: {0}")]
+    Parse(#[from] quick_xml::DeError),
+}
+
+impl FritzError {
+    /// Whether retrying the identical request could plausibly succeed.
+    ///
+    /// Transient failures (lost connection, server-side 5xx) are retryable;
+    /// configuration, login and parse failures are permanent.
+    fn is_retryable(&self) -> bool {
+        match self {
+            FritzError::Transport(_) => true,
+            FritzError::Http { status, .. } => status.is_server_error(),
+            FritzError::Config(_) | FritzError::Login(_) | FritzError::Parse(_) => false,
+        }
+    }
+}
 
 /// A smart-home device reported by the FRITZ!Box.
 #[derive(Debug, Clone)]
@@ -44,9 +95,10 @@ impl FritzClient {
         dotenvy::dotenv().ok();
 
         let host = env::var("FRITZ_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string());
-        let user = env::var("FRITZ_USERNAME").map_err(|_| "FRITZ_USERNAME not found in .env")?;
-        let password =
-            env::var("FRITZ_PASSWORD").map_err(|_| "FRITZ_PASSWORD not found in .env")?;
+        let user = env::var("FRITZ_USERNAME")
+            .map_err(|_| FritzError::Config("FRITZ_USERNAME not found in .env".into()))?;
+        let password = env::var("FRITZ_PASSWORD")
+            .map_err(|_| FritzError::Config("FRITZ_PASSWORD not found in .env".into()))?;
 
         // The FRITZ!Box serves the LAN interface with a self-signed certificate;
         // we trust it on purpose because we reach the box directly by IP.
@@ -82,8 +134,26 @@ impl FritzClient {
         self.aha_request("setswitchoff", Some(ain)).map(drop)
     }
 
-    /// Sends one AHA command, re-authenticating once if the session expired.
+    /// Sends one AHA command, retrying transient failures a few times.
     fn aha_request(&mut self, cmd: &str, ain: Option<&str>) -> Result<String> {
+        for attempt in 1..=RETRY_ATTEMPTS {
+            match self.try_aha_request(cmd, ain) {
+                Err(err) if err.is_retryable() && attempt < RETRY_ATTEMPTS => {
+                    eprintln!(
+                        "  '{cmd}' failed (attempt {attempt}/{RETRY_ATTEMPTS}): {err} \
+                         — retrying in {}s",
+                        RETRY_DELAY.as_secs()
+                    );
+                    thread::sleep(RETRY_DELAY);
+                }
+                result => return result,
+            }
+        }
+        unreachable!("the loop returns on the final attempt")
+    }
+
+    /// Performs a single AHA command, re-authenticating once on a stale session.
+    fn try_aha_request(&mut self, cmd: &str, ain: Option<&str>) -> Result<String> {
         let mut response = self.send_aha(cmd, ain)?;
 
         // A 403 means the SID timed out (e.g. while waiting between watering
@@ -94,13 +164,17 @@ impl FritzClient {
         }
 
         let status = response.status();
+        if status == reqwest::StatusCode::FORBIDDEN {
+            return Err(FritzError::Login(format!(
+                "FRITZ!Box rejected '{cmd}' even after re-login — the user likely \
+                 lacks the 'Smart Home' permission (System > FRITZ!Box Users)."
+            )));
+        }
         if !status.is_success() {
-            let hint = if status == reqwest::StatusCode::FORBIDDEN {
-                " (the logged-in FRITZ!Box user may lack the 'Smart Home' permission)"
-            } else {
-                ""
-            };
-            return Err(format!("FRITZ!Box rejected '{cmd}' with HTTP {status}{hint}").into());
+            return Err(FritzError::Http {
+                cmd: cmd.to_string(),
+                status,
+            });
         }
         Ok(response.text()?)
     }
@@ -120,11 +194,10 @@ impl FritzClient {
     fn update_sid(&mut self) -> Result<()> {
         let challenge = self.session_info(&[("version", "2")])?;
         if challenge.blocked_seconds() > 0 {
-            return Err(format!(
+            return Err(FritzError::Login(format!(
                 "FRITZ!Box is throttling logins after failed attempts; retry in {} s",
                 challenge.blocked_seconds()
-            )
-            .into());
+            )));
         }
 
         let response = compute_response(&challenge.challenge, &self.password)?;
@@ -135,13 +208,12 @@ impl FritzClient {
         ])?;
 
         if session.sid == DEFAULT_SID {
-            return Err(format!(
+            return Err(FritzError::Login(format!(
                 "FRITZ!Box login failed for user '{}'. Check FRITZ_USERNAME / \
                  FRITZ_PASSWORD and make sure that user has the 'Smart Home' \
                  permission (System > FRITZ!Box Users in the web UI).",
                 self.user
-            )
-            .into());
+            )));
         }
 
         self.sid = session.sid;
@@ -166,26 +238,45 @@ impl FritzClient {
 /// with both salts hex-encoded.
 fn compute_response(challenge: &str, password: &str) -> Result<String> {
     let Some(pbkdf2_params) = challenge.strip_prefix("2$") else {
-        return Err(format!("expected a PBKDF2 login challenge, got '{challenge}'").into());
+        return Err(FritzError::Login(format!(
+            "expected a PBKDF2 login challenge, got '{challenge}'"
+        )));
     };
 
     let parts: Vec<&str> = pbkdf2_params.split('$').collect();
     let [iter1, salt1, iter2, salt2] = parts[..] else {
-        return Err(format!("malformed PBKDF2 challenge: '{challenge}'").into());
+        return Err(FritzError::Login(format!(
+            "malformed PBKDF2 challenge: '{challenge}'"
+        )));
     };
 
     let mut hash1 = [0u8; 32];
     pbkdf2::pbkdf2_hmac::<Sha256>(
         password.as_bytes(),
-        &hex::decode(salt1)?,
-        iter1.parse()?,
+        &decode_salt(salt1)?,
+        parse_iterations(iter1)?,
         &mut hash1,
     );
 
     let mut hash2 = [0u8; 32];
-    pbkdf2::pbkdf2_hmac::<Sha256>(&hash1, &hex::decode(salt2)?, iter2.parse()?, &mut hash2);
+    pbkdf2::pbkdf2_hmac::<Sha256>(
+        &hash1,
+        &decode_salt(salt2)?,
+        parse_iterations(iter2)?,
+        &mut hash2,
+    );
 
     Ok(format!("{salt2}${}", hex::encode(hash2)))
+}
+
+fn decode_salt(salt: &str) -> Result<Vec<u8>> {
+    hex::decode(salt).map_err(|e| FritzError::Login(format!("invalid challenge salt: {e}")))
+}
+
+fn parse_iterations(value: &str) -> Result<u32> {
+    value
+        .parse()
+        .map_err(|e| FritzError::Login(format!("invalid challenge iteration count: {e}")))
 }
 
 #[derive(Deserialize)]
@@ -248,9 +339,6 @@ impl From<DeviceXml> for Device {
 #[test]
 #[ignore = "requires a live FRITZ!Box and .env credentials"]
 fn test_device() {
-    use std::thread;
-    use std::time::Duration;
-
     let mut client = FritzClient::login().unwrap();
     let devices = client.list_devices().unwrap();
     let ain = devices.first().unwrap().ain.clone();
