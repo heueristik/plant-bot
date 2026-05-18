@@ -51,6 +51,11 @@ pub enum FritzError {
     /// The FRITZ!Box response could not be parsed.
     #[error("unexpected response from the FRITZ!Box: {0}")]
     Parse(#[from] quick_xml::DeError),
+
+    /// The FRITZ!Box accepted the command but the device did not apply it —
+    /// typically because it is offline (e.g. not plugged in).
+    #[error("device '{ain}' did not apply the command (FRITZ!Box replied '{response}')")]
+    DeviceUnavailable { ain: String, response: String },
 }
 
 impl FritzError {
@@ -62,7 +67,10 @@ impl FritzError {
         match self {
             FritzError::Transport(_) => true,
             FritzError::Http { status, .. } => status.is_server_error(),
-            FritzError::Config(_) | FritzError::Login(_) | FritzError::Parse(_) => false,
+            FritzError::Config(_)
+            | FritzError::Login(_)
+            | FritzError::Parse(_)
+            | FritzError::DeviceUnavailable { .. } => false,
         }
     }
 }
@@ -70,7 +78,7 @@ impl FritzError {
 /// A smart-home device reported by the FRITZ!Box.
 #[derive(Debug, Clone)]
 pub struct Device {
-    /// Actor identification number, e.g. `"11630 0069103"`.
+    /// Actor identification number (AIN), e.g. `"11630 0069103"`.
     pub ain: String,
     pub name: String,
     pub product: String,
@@ -78,6 +86,8 @@ pub struct Device {
     pub celsius: f32,
     /// Whether the device is a switchable socket (can be turned on/off).
     pub switchable: bool,
+    /// Whether the device is currently online and reachable by the FRITZ!Box.
+    pub present: bool,
 }
 
 /// A logged-in connection to the FRITZ!Box AHA-HTTP-Interface.
@@ -124,14 +134,46 @@ impl FritzClient {
         Ok(list.devices.into_iter().map(Device::from).collect())
     }
 
+    /// Looks up the device named by the required `FRITZ_AIN` env variable.
+    ///
+    /// The AIN is matched ignoring spaces, so `"11657 0697711"` and
+    /// `"116570697711"` are equivalent.
+    pub fn configured_device(&mut self) -> Result<Device> {
+        let ain = env::var("FRITZ_AIN")
+            .map_err(|_| FritzError::Config("FRITZ_AIN not found in .env".into()))?;
+        let wanted = ain.replace(' ', "");
+
+        self.list_devices()?
+            .into_iter()
+            .find(|d| d.ain.replace(' ', "") == wanted)
+            .ok_or_else(|| {
+                FritzError::Config(format!("no device with AIN '{ain}' found on the FRITZ!Box"))
+            })
+    }
+
     /// Switches the socket with the given AIN on.
     pub fn turn_on(&mut self, ain: &str) -> Result<()> {
-        self.aha_request("setswitchon", Some(ain)).map(drop)
+        self.set_switch(ain, "setswitchon", "1")
     }
 
     /// Switches the socket with the given AIN off.
     pub fn turn_off(&mut self, ain: &str) -> Result<()> {
-        self.aha_request("setswitchoff", Some(ain)).map(drop)
+        self.set_switch(ain, "setswitchoff", "0")
+    }
+
+    /// Sends a switch command and verifies the FRITZ!Box confirms the new
+    /// state. An offline device makes the box reply `inval`, which is treated
+    /// as a failure rather than a silent success.
+    fn set_switch(&mut self, ain: &str, cmd: &str, expected_state: &str) -> Result<()> {
+        let state = self.aha_request(cmd, Some(ain))?;
+        if state.trim() == expected_state {
+            Ok(())
+        } else {
+            Err(FritzError::DeviceUnavailable {
+                ain: ain.to_string(),
+                response: state.trim().to_string(),
+            })
+        }
     }
 
     /// Sends one AHA command, retrying transient failures a few times.
@@ -308,6 +350,8 @@ struct DeviceXml {
     #[serde(rename = "@productname")]
     productname: String,
     name: String,
+    #[serde(default)]
+    present: String,
     /// Present only for devices with a switchable socket, regardless of model.
     switch: Option<serde::de::IgnoredAny>,
     temperature: Option<TemperatureXml>,
@@ -332,6 +376,7 @@ impl From<DeviceXml> for Device {
             product: xml.productname,
             celsius,
             switchable: xml.switch.is_some(),
+            present: xml.present.trim() == "1",
         }
     }
 }

@@ -12,16 +12,26 @@ mod weather;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Querying weather...");
     let mut client = socket::FritzClient::login()?;
-    let devices = client.list_devices()?;
-    let dev = devices
-        .iter()
-        .find(|d| d.switchable)
-        .or_else(|| devices.first())
-        .expect("No devices found");
-    let ain = dev.ain.clone();
+    let dev = client.configured_device()?;
 
     println!("   Device: {} ({})", dev.name, dev.product);
     println!("   Temperature (Current): {:.1} °C", dev.celsius);
+
+    if !dev.switchable {
+        return Err(format!(
+            "device '{}' (AIN {}) is not a switchable socket",
+            dev.name, dev.ain
+        )
+        .into());
+    }
+    if !dev.present {
+        return Err(format!(
+            "device '{}' is offline — check that the FRITZ!Smart Energy plug is \
+             plugged in and connected to the FRITZ!Box",
+            dev.name
+        )
+        .into());
+    }
 
     thread::sleep(core::time::Duration::from_secs(2));
     let n_cycles = calculate_cycles_needed_blocked(location::BERLIN)?;
@@ -32,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Started watering cycle {i}...");
 
         println!("Turned electricity ON...");
-        client.turn_on(&ain)?;
+        client.turn_on(&dev.ain)?;
 
         let pump_interval = Time::new::<second>(60.0);
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
@@ -45,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         thread::sleep(Duration::from_secs(shutdown_interval.get::<second>() as u64));
 
-        if let Err(err) = client.turn_off(&ain) {
+        if let Err(err) = client.turn_off(&dev.ain) {
             eprintln!("!!! CRITICAL: failed to switch the pump OFF: {err}");
             eprintln!("!!! The pump may still be running — switch it off manually now.");
             return Err(err.into());
