@@ -1,13 +1,18 @@
 [package]
+edition = "2024"
 name = "plant-bot"
 version = "0.1.0"
-edition = "2024"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
-dotenv = "0.15.0"
-fritzapi = "0.4.1"
-open-meteo-api = "0.1.4"
-uom = { version = "0.35.0", features = ["f32"] }
 chrono = "0.4.41"
-
+dotenv = "0.15.0"
+hex = "0.4"
+md5 = "0.7"
+open-meteo-api = "0.1.4"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+quick-xml = { version = "0.37", features = ["serialize"] }
+reqwest = { version = "0.12", features = ["blocking"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+uom = { version = "0.35.0", features = ["f32"] }

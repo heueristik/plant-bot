@@ -1,4 +1,3 @@
-use crate::socket::to_dect210;
 use crate::weather::calculate_cycles_needed_blocked;
 use core::time::Duration;
 use std::thread;
@@ -12,11 +11,17 @@ mod weather;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Querying weather...");
-    let mut client = socket::get_client();
-    let mut devices = client.list_devices()?;
-    let dev = devices.first_mut().expect("No devices found");
+    let mut client = socket::FritzClient::login()?;
+    let devices = client.list_devices()?;
+    let dev = devices
+        .iter()
+        .find(|d| d.switchable)
+        .or_else(|| devices.first())
+        .expect("No devices found");
+    let ain = dev.ain.clone();
 
-    println!("   Temperature (Current): {} °C", to_dect210(dev).celsius);
+    println!("   Device: {} ({})", dev.name, dev.product);
+    println!("   Temperature (Current): {:.1} °C", dev.celsius);
 
     thread::sleep(core::time::Duration::from_secs(2));
     let n_cycles = calculate_cycles_needed_blocked(location::BERLIN)?;
@@ -27,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Started watering cycle {i}...");
 
         println!("Turned electricity ON...");
-        dev.turn_on(&mut client).expect("Failed to turn on ");
+        client.turn_on(&ain).expect("Failed to turn on");
 
         let pump_interval = Time::new::<second>(60.0);
         println!("Pumping for {} seconds...", pump_interval.get::<second>());
@@ -41,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(Duration::from_secs(shutdown_interval.get::<second>() as u64));
 
         println!("Turned electricity OFF...");
-        dev.turn_off(&mut client).expect("Failed to turn off ");
+        client.turn_off(&ain).expect("Failed to turn off");
 
         if i < n_cycles {
             let sleep_interval = Time::new::<minute>(60.0) - (pump_interval + shutdown_interval);
