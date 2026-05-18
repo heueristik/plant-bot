@@ -7,7 +7,6 @@ version = "0.1.0"
 chrono = "0.4.41"
 dotenv = "0.15.0"
 hex = "0.4"
-md5 = "0.7"
 open-meteo-api = "0.1.4"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 quick-xml = { version = "0.37", features = ["serialize"] }

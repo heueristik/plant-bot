@@ -160,16 +160,15 @@ impl FritzClient {
     }
 }
 
-/// Computes the login response for the FRITZ!Box challenge.
+/// Computes the PBKDF2 login response for the FRITZ!Box challenge.
 ///
-/// FRITZ!OS >= 7.24 (which includes the 7530 AX) issues a PBKDF2 challenge
-/// prefixed with `2$`; older firmware issues a legacy MD5 challenge.
+/// FRITZ!OS >= 7.24 issues the challenge as `2$<iter1>$<salt1>$<iter2>$<salt2>`,
+/// with both salts hex-encoded.
 fn compute_response(challenge: &str, password: &str) -> Result<String> {
     let Some(pbkdf2_params) = challenge.strip_prefix("2$") else {
-        return Ok(legacy_md5_response(challenge, password));
+        return Err(format!("expected a PBKDF2 login challenge, got '{challenge}'").into());
     };
 
-    // Challenge layout: "2$<iter1>$<salt1>$<iter2>$<salt2>", salts hex-encoded.
     let parts: Vec<&str> = pbkdf2_params.split('$').collect();
     let [iter1, salt1, iter2, salt2] = parts[..] else {
         return Err(format!("malformed PBKDF2 challenge: '{challenge}'").into());
@@ -187,20 +186,6 @@ fn compute_response(challenge: &str, password: &str) -> Result<String> {
     pbkdf2::pbkdf2_hmac::<Sha256>(&hash1, &hex::decode(salt2)?, iter2.parse()?, &mut hash2);
 
     Ok(format!("{salt2}${}", hex::encode(hash2)))
-}
-
-/// Legacy MD5 challenge-response for FRITZ!OS older than 7.24.
-fn legacy_md5_response(challenge: &str, password: &str) -> String {
-    // AVM requires Unicode code points above 255 to be replaced with '.'.
-    let cleaned: String = password
-        .chars()
-        .map(|c| if c as u32 > 255 { '.' } else { c })
-        .collect();
-    let utf16le: Vec<u8> = format!("{challenge}-{cleaned}")
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect();
-    format!("{challenge}-{:032x}", md5::compute(utf16le))
 }
 
 #[derive(Deserialize)]
