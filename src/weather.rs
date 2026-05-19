@@ -2,25 +2,49 @@ use crate::location::Location;
 use chrono::{DateTime, Timelike, Utc};
 use open_meteo_api::models::OpenMeteoData;
 use open_meteo_api::query::OpenMeteo;
+use std::time::Duration;
 use uom::ConversionFactor;
 use uom::si::area::square_meter;
 use uom::si::f32::{Area, Length, Volume};
 use uom::si::length::millimeter;
 use uom::si::volume::liter;
 
+/// How many times the Open-Meteo request is attempted before giving up.
+const WEATHER_ATTEMPTS: usize = 3;
+
+/// Delay between Open-Meteo retries.
+const WEATHER_RETRY_DELAY: Duration = Duration::from_secs(5);
+
 pub async fn query_weather_data(
     location: Location,
 ) -> Result<OpenMeteoData, Box<dyn std::error::Error>> {
-    OpenMeteo::new()
+    // Build the query once (which consumes `location.time_zone`) and retry
+    // only the HTTP call — top-of-the-hour transients can return empty or
+    // non-JSON bodies that `open-meteo-api` then fails to parse.
+    let query = OpenMeteo::new()
         .coordinates(location.latitude, location.longitude)?
         .forecast_days(2)?
         .current_weather()?
         .past_days(2)?
         .time_zone(location.time_zone)?
         .hourly()?
-        .daily()?
-        .query()
-        .await
+        .daily()?;
+
+    for attempt in 1..=WEATHER_ATTEMPTS {
+        match query.query().await {
+            Ok(data) => return Ok(data),
+            Err(err) if attempt < WEATHER_ATTEMPTS => {
+                eprintln!(
+                    "  weather query failed (attempt {attempt}/{WEATHER_ATTEMPTS}): {err} \
+                     — retrying in {}s",
+                    WEATHER_RETRY_DELAY.as_secs()
+                );
+                tokio::time::sleep(WEATHER_RETRY_DELAY).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    unreachable!("the loop returns on the final attempt")
 }
 
 pub fn calculate_cycles_needed_blocked(
