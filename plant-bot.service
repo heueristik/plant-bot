@@ -8,8 +8,11 @@ Type=simple
 User=plant-bot
 Restart=no
 
-Environment="FRITZ_USERNAME=<username>"
-Environment="FRITZ_PASSWORD=<password>"
+# A systemd service does not run from the project directory, so the binary
+# cannot find its own .env. systemd loads it here instead — keep every
+# FRITZ_* variable (FRITZ_HOST, FRITZ_USERNAME, FRITZ_PASSWORD, FRITZ_AIN)
+# in that file.
+EnvironmentFile=/home/plant-bot/plant-bot/.env
 
 ExecStart=/home/plant-bot/plant-bot/target/release/plant-bot
 
