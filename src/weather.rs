@@ -23,59 +23,94 @@ pub async fn query_weather_data(
         .await
 }
 
-pub async fn calculate_cycles_needed(data: &OpenMeteoData) -> usize {
-    let area = Area::new::<square_meter>(0.5);
-    let delta = Length::new::<millimeter>(precipitation_evaporation_delta(data));
-    let scale_factor = 2.0;
-    let volume = scale_factor * delta * area;
-
-    println!(
-        "                   Area : {:.2} m2",
-        area.get::<square_meter>().value()
-    );
-
-    println!(
-        "{} volume: {:.2} L\n",
-        if delta.value > 0.0 {
-            "          Surplus"
-        } else {
-            "        Deficient"
-        },
-        volume.get::<liter>().value().abs()
-    );
-
-    let n_cycles = if delta.value > 0.0 {
-        0 // No cycles needed
-    } else {
-        let volume_per_cycle = Volume::new::<liter>(0.5);
-
-        (volume.abs() / volume_per_cycle).value.ceil() as usize
-    };
-
-    if n_cycles > 10 { 10 } else { n_cycles }
-}
-
 pub fn calculate_cycles_needed_blocked(
     location: Location,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
         let data = query_weather_data(location).await?;
-        Ok(calculate_cycles_needed(&data).await)
+        let estimate = estimate_watering(&data)?;
+        print_estimate(&estimate);
+        Ok(estimate.cycles)
     })
 }
 
-fn precipitation_evaporation_delta(data: &OpenMeteoData) -> f32 {
-    let index = find_current_hourly_index(data).expect("Current hourly index not found");
-    let hourly_data = data.hourly.as_ref().expect("Missing hourly weather data");
+/// The outcome of the watering calculation for one location.
+struct WateringEstimate {
+    /// Rainfall over the past 24 h.
+    precipitation: Length,
+    /// Evapotranspiration over the past 24 h.
+    evapotranspiration: Length,
+    /// The watered area.
+    area: Area,
+    /// Net water budget — positive is a surplus, negative a deficit.
+    volume: Volume,
+    /// Number of watering cycles needed.
+    cycles: usize,
+}
 
-    let precipitation = calculate_metric(&hourly_data.precipitation, index, -24);
-    let evapotranspiration = calculate_metric(&hourly_data.et0_fao_evapotranspiration, index, -24);
+/// Computes how many watering cycles a location needs from its forecast.
+///
+/// Returns an error if the forecast lacks the hourly data for the current hour.
+fn estimate_watering(data: &OpenMeteoData) -> Result<WateringEstimate, Box<dyn std::error::Error>> {
+    let index =
+        find_current_hourly_index(data).ok_or("current hour not found in the weather forecast")?;
+    let hourly = data
+        .hourly
+        .as_ref()
+        .ok_or("weather forecast contains no hourly data")?;
 
-    println!("     Precipitation (24h): {precipitation:.2} mm",);
-    println!("Evapotranspiration (24h): {evapotranspiration:.2} mm",);
+    let precipitation =
+        Length::new::<millimeter>(calculate_metric(&hourly.precipitation, index, -24));
+    let evapotranspiration =
+        Length::new::<millimeter>(calculate_metric(&hourly.et0_fao_evapotranspiration, index, -24));
+    let delta = precipitation - evapotranspiration;
 
-    precipitation - evapotranspiration
+    let area = Area::new::<square_meter>(0.5);
+    let scale_factor = 2.0;
+    let volume = scale_factor * delta * area;
+
+    let cycles = if delta.value > 0.0 {
+        0 // surplus — no watering needed
+    } else {
+        let volume_per_cycle = Volume::new::<liter>(0.5);
+        let needed = (volume.abs() / volume_per_cycle).value.ceil() as usize;
+        needed.min(10)
+    };
+
+    Ok(WateringEstimate {
+        precipitation,
+        evapotranspiration,
+        area,
+        volume,
+        cycles,
+    })
+}
+
+/// Prints a human-readable summary of a watering estimate.
+fn print_estimate(estimate: &WateringEstimate) {
+    println!(
+        "     Precipitation (24h): {:.2} mm",
+        estimate.precipitation.get::<millimeter>().value()
+    );
+    println!(
+        "Evapotranspiration (24h): {:.2} mm",
+        estimate.evapotranspiration.get::<millimeter>().value()
+    );
+    println!(
+        "                   Area : {:.2} m2",
+        estimate.area.get::<square_meter>().value()
+    );
+
+    let label = if estimate.volume.value > 0.0 {
+        "          Surplus"
+    } else {
+        "        Deficient"
+    };
+    println!(
+        "{label} volume: {:.2} L\n",
+        estimate.volume.get::<liter>().value().abs()
+    );
 }
 
 fn calculate_metric(data: &[Option<f32>], index: usize, range_hours: isize) -> f32 {
@@ -118,10 +153,11 @@ fn utc_offset_string(utc_offset_seconds: f32) -> String {
 }
 
 #[tokio::test]
+#[ignore = "requires network access to the Open-Meteo API"]
 async fn test_find_current_hour_index() {
     use crate::location::BERLIN;
 
-    let data = query_weather_data(BERLIN).await;
+    let data = query_weather_data(BERLIN).await.unwrap();
 
     let index = find_current_hourly_index(&data).unwrap();
     let found_time_parsing = DateTime::parse_from_rfc3339(&adjusted_date_with_offset(
