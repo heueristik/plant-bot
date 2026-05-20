@@ -33,7 +33,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
 
-    thread::sleep(core::time::Duration::from_secs(2));
+    thread::sleep(core::time::Duration::from_secs(1));
+
+    // Ensure the device is turned off to trigger before running the program.
+    client.turn_off(&dev.ain)?;
+
+    thread::sleep(core::time::Duration::from_secs(1));
+
     let n_cycles = calculate_cycles_needed_blocked(location::BERLIN)?;
 
     println!("{n_cycles} cycles needed");
